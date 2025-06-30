@@ -1,29 +1,33 @@
 import os
 from flask import Flask, request, jsonify
 from twilio.twiml.voice_response import VoiceResponse
-import openai
+from openai import OpenAI
 from elevenlabs.client import ElevenLabs
 
 app = Flask(__name__)
 
-# Miljövariabler
+# ===== Miljövariabler =====
 openai_api_key = os.getenv("OPENAI_API_KEY")
 eleven_api_key = os.getenv("ELEVENLABS_API_KEY")
 voice_id = os.getenv("VOICE_ID")
 
-# Initiera klienter
-openai_client = openai.OpenAI(api_key=openai_api_key)
+# ===== Debug-utskrifter =====
+print("✅ OPENAI_API_KEY:", openai_api_key)
+print("✅ ELEVENLABS_API_KEY:", eleven_api_key)
+print("✅ VOICE_ID:", voice_id)
+
+# ===== Initiera klienter =====
+openai_client = OpenAI(api_key=openai_api_key)
 eleven_client = ElevenLabs(api_key=eleven_api_key)
 
-# Debug-test för att se om API fungerar
-print(f"OpenAI API Key Loaded: {openai_api_key}")
+# ===== Testa att OpenAI fungerar =====
 try:
-    models = openai_client.models.list()
-    print("OpenAI-modeller tillgängliga:", [m.id for m in models.data])
+    test = openai_client.models.list()
+    print("🟢 OpenAI fungerar och returnerade modeller.")
 except Exception as e:
-    print("❌ Fel vid OpenAI-anrop:", e)
+    print("🔴 OpenAI-fel:", e)
 
-# Prompt för samtalet
+# ===== Prompt =====
 base_prompt = """
 Du är en AI-assistent som heter Sanna och jobbar för {{företagsnamn}}. Du ringer villaägare för att höra om de funderar på {{tjänst}}.
 Efter presentationen inled gärna med att fråga om kunden känner till företaget du ringer ifrån. Invänta sedan svar.
@@ -42,10 +46,12 @@ Vid inbokat möte – föreslå en eftermiddag eller förmiddag, fråga vad som 
 Meddela att kunden kommer få en bokningsbekräftelse på sms efter samtalet.
 """
 
+# ===== Indexroute =====
 @app.route("/", methods=["GET"])
 def index():
-    return jsonify({"message": "AI Call Agent är igång – använd /voice för att testa röstsvar."})
+    return jsonify({"message": "✅ AI Call Agent är igång – POST /voice för samtal."})
 
+# ===== Voice route =====
 @app.route("/voice", methods=["POST"])
 def voice():
     response = VoiceResponse()
@@ -54,6 +60,7 @@ def voice():
     if not user_input:
         user_input = "Hej!"
 
+    # Skicka till OpenAI
     try:
         reply = openai_client.chat.completions.create(
             model="gpt-4",
@@ -62,24 +69,26 @@ def voice():
                 {"role": "user", "content": user_input}
             ]
         ).choices[0].message.content
+    except Exception as e:
+        print("🔴 Fel vid OpenAI-chat:", e)
+        reply = "Jag är ledsen, något gick fel med samtalet."
 
-        # Generera och streama röst
-        audio_stream = eleven_client.generate(
+    # Skapa röst med ElevenLabs
+    try:
+        audio = eleven_client.generate(
             text=reply,
             voice=voice_id,
             model_id="eleven_multilingual_v2",
             stream=True
         )
-
-        for chunk in audio_stream:
-            pass  # detta triggar streamen, även om vi inte spelar upp det här
-
+        for chunk in audio:
+            pass  # Streamen triggas men används ej här
     except Exception as e:
-        print("Fel i voice-funktionen:", e)
-        response.say("Det blev ett tekniskt fel. Vi återkommer.")
+        print("🔴 Fel vid ElevenLabs-röst:", e)
 
     response.say("Tack för samtalet, hej då.")
     return str(response)
 
+# ===== Kör app =====
 if __name__ == "__main__":
     app.run(debug=True)
