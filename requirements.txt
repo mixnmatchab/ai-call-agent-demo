@@ -1,5 +1,5 @@
 openai
-elevenlabs==3.0.0
+elevenlabs==2.5.0
 twilio
 python-dotenv
 fastapi
