@@ -1,22 +1,29 @@
 import os
 from flask import Flask, request, jsonify
 from twilio.twiml.voice_response import VoiceResponse
-from openai import OpenAI
+import openai
 from elevenlabs.client import ElevenLabs
 
 app = Flask(__name__)
 
 # Miljövariabler
 openai_api_key = os.getenv("OPENAI_API_KEY")
-print(f"OpenAI API Key Loaded: {openai_api_key}")
 eleven_api_key = os.getenv("ELEVENLABS_API_KEY")
 voice_id = os.getenv("VOICE_ID")
 
 # Initiera klienter
-openai_client = OpenAI(api_key=openai_api_key)
+openai_client = openai.OpenAI(api_key=openai_api_key)
 eleven_client = ElevenLabs(api_key=eleven_api_key)
 
-# Prompt
+# Debug-test för att se om API fungerar
+print(f"OpenAI API Key Loaded: {openai_api_key}")
+try:
+    models = openai_client.models.list()
+    print("OpenAI-modeller tillgängliga:", [m.id for m in models.data])
+except Exception as e:
+    print("❌ Fel vid OpenAI-anrop:", e)
+
+# Prompt för samtalet
 base_prompt = """
 Du är en AI-assistent som heter Sanna och jobbar för {{företagsnamn}}. Du ringer villaägare för att höra om de funderar på {{tjänst}}.
 Efter presentationen inled gärna med att fråga om kunden känner till företaget du ringer ifrån. Invänta sedan svar.
@@ -47,26 +54,29 @@ def voice():
     if not user_input:
         user_input = "Hej!"
 
-    # Skicka till OpenAI
-    reply = openai_client.chat.completions.create(
-        model="gpt-4",
-        messages=[
-            {"role": "system", "content": base_prompt},
-            {"role": "user", "content": user_input}
-        ]
-    ).choices[0].message.content
+    try:
+        reply = openai_client.chat.completions.create(
+            model="gpt-4",
+            messages=[
+                {"role": "system", "content": base_prompt},
+                {"role": "user", "content": user_input}
+            ]
+        ).choices[0].message.content
 
-    # Generera röst via ElevenLabs
-    audio = eleven_client.generate(
-        text=reply,
-        voice=voice_id,
-        model_id="eleven_multilingual_v2",
-        stream=True
-    )
+        # Generera och streama röst
+        audio_stream = eleven_client.generate(
+            text=reply,
+            voice=voice_id,
+            model_id="eleven_multilingual_v2",
+            stream=True
+        )
 
-    # Streama ljudet (loop krävs för att trigga uppspelning, även om vi inte använder chunken direkt)
-    for chunk in audio:
-        pass
+        for chunk in audio_stream:
+            pass  # detta triggar streamen, även om vi inte spelar upp det här
+
+    except Exception as e:
+        print("Fel i voice-funktionen:", e)
+        response.say("Det blev ett tekniskt fel. Vi återkommer.")
 
     response.say("Tack för samtalet, hej då.")
     return str(response)
