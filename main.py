@@ -4,6 +4,7 @@ from twilio.twiml.voice_response import VoiceResponse
 from openai import OpenAI
 from elevenlabs.client import ElevenLabs
 
+# ===== Init Flask-app =====
 app = Flask(__name__)
 
 # ===== Miljövariabler =====
@@ -12,20 +13,13 @@ eleven_api_key = os.getenv("ELEVENLABS_API_KEY")
 voice_id = os.getenv("VOICE_ID")
 
 # ===== Debug-utskrifter =====
-print("✅ OPENAI_API_KEY:", openai_api_key)
-print("✅ ELEVENLABS_API_KEY:", eleven_api_key)
+print("✅ OPENAI_API_KEY:", bool(openai_api_key))
+print("✅ ELEVENLABS_API_KEY:", bool(eleven_api_key))
 print("✅ VOICE_ID:", voice_id)
 
 # ===== Initiera klienter =====
 openai_client = OpenAI(api_key=openai_api_key)
 eleven_client = ElevenLabs(api_key=eleven_api_key)
-
-# ===== Testa att OpenAI fungerar =====
-try:
-    test = openai_client.models.list()
-    print("🟢 OpenAI fungerar och returnerade modeller.")
-except Exception as e:
-    print("🔴 OpenAI-fel:", e)
 
 # ===== Prompt =====
 base_prompt = """
@@ -46,12 +40,12 @@ Vid inbokat möte – föreslå en eftermiddag eller förmiddag, fråga vad som 
 Meddela att kunden kommer få en bokningsbekräftelse på sms efter samtalet.
 """
 
-# ===== Indexroute =====
+# ===== Test-Endpoint =====
 @app.route("/", methods=["GET"])
 def index():
     return jsonify({"message": "✅ AI Call Agent är igång – POST /voice för samtal."})
 
-# ===== Voice route =====
+# ===== Voice-Endpoint =====
 @app.route("/voice", methods=["POST"])
 def voice():
     response = VoiceResponse()
@@ -60,8 +54,8 @@ def voice():
     if not user_input:
         user_input = "Hej!"
 
-    # Skicka till OpenAI
     try:
+        # OpenAI: Skapa svar
         reply = openai_client.chat.completions.create(
             model="gpt-4",
             messages=[
@@ -69,26 +63,30 @@ def voice():
                 {"role": "user", "content": user_input}
             ]
         ).choices[0].message.content
-    except Exception as e:
-        print("🔴 Fel vid OpenAI-chat:", e)
-        reply = "Jag är ledsen, något gick fel med samtalet."
 
-    # Skapa röst med ElevenLabs
+    except Exception as e:
+        print("🔴 OpenAI-fel:", e)
+        reply = "Jag är ledsen, något gick fel med svaret."
+
     try:
-        audio = eleven_client.generate(
+        # ElevenLabs: Skapa ljudström
+        audio_stream = eleven_client.generate(
             text=reply,
             voice=voice_id,
             model_id="eleven_multilingual_v2",
             stream=True
         )
-        for chunk in audio:
-            pass  # Streamen triggas men används ej här
+
+        # Streama ljudet (trigger men används ej direkt)
+        for chunk in audio_stream:
+            pass
+
     except Exception as e:
-        print("🔴 Fel vid ElevenLabs-röst:", e)
+        print("🔴 ElevenLabs-fel:", e)
 
     response.say("Tack för samtalet, hej då.")
     return str(response)
 
-# ===== Kör app =====
+# ===== Kör appen =====
 if __name__ == "__main__":
     app.run(debug=True)
