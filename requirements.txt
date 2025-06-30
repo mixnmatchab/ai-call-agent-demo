@@ -1,8 +1,8 @@
-openai
+openai==1.9.3
 elevenlabs==2.5.0
-twilio
-python-dotenv
-fastapi
-uvicorn
-requests
-flask
+twilio==8.10.0
+python-dotenv==1.0.1
+fastapi==0.111.0
+uvicorn==0.30.1
+requests==2.31.0
+flask==3.0.3
