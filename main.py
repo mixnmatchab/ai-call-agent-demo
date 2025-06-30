@@ -2,22 +2,20 @@ import os
 from flask import Flask, request, jsonify
 from twilio.twiml.voice_response import VoiceResponse
 from openai import OpenAI
-from elevenlabs.client import ElevenLabs
-from elevenlabs import stream
+from elevenlabs import ElevenLabs, stream
 
 app = Flask(__name__)
 
-# Environment variables
+# Miljövariabler
 openai_api_key = os.getenv("OPENAI_API_KEY")
-eleven_api_key = os.getenv("ELEVEN_API_KEY")
-twilio_number = os.getenv("TWILIO_PHONE_NUMBER")
-receiver_number = os.getenv("RECEIVER_PHONE_NUMBER")
+elevenlabs_api_key = os.getenv("ELEVENLABS_API_KEY")
+voice_id = os.getenv("VOICE_ID")
 
-# Clients
+# Klienter
 openai_client = OpenAI(api_key=openai_api_key)
-eleven_client = ElevenLabs(api_key=eleven_api_key)
+eleven_client = ElevenLabs(api_key=elevenlabs_api_key)
 
-# Prompt
+# Prompt (du kan förbättra vidare om du vill)
 base_prompt = """
 Du är en AI-assistent som heter Sanna och jobbar för {{företagsnamn}}. Du ringer villaägare för att höra om de funderar på {{tjänst}}.
 Efter presentationen inled gärna med att fråga om kunden känner till företaget du ringer ifrån. Invänta sedan svar.
@@ -38,35 +36,34 @@ Meddela att kunden kommer få en bokningsbekräftelse på sms efter samtalet.
 
 @app.route("/", methods=["GET"])
 def index():
-    return jsonify({"message": "AI Call Agent is running. Use the /chat endpoint to post messages."})
+    return jsonify({"message": "AI Call Agent is running."})
 
 @app.route("/voice", methods=["POST"])
 def voice():
     response = VoiceResponse()
     user_input = request.values.get("SpeechResult", "")
-    
+
     if not user_input:
-        # Första meddelandet om inget input
         user_input = "Hej!"
 
-    # Skicka input till OpenAI
-    reply = openai_client.chat.completions.create(
+    completion = openai_client.chat.completions.create(
         model="gpt-4",
         messages=[
             {"role": "system", "content": base_prompt},
             {"role": "user", "content": user_input}
         ]
-    ).choices[0].message.content
+    )
 
-    # Spela upp svaret från ElevenLabs
-    audio = eleven_client.generate(
+    reply = completion.choices[0].message.content.strip()
+
+    audio_stream = eleven_client.generate(
         text=reply,
-        voice="Sanna",  # använd din valda röst här
+        voice=voice_id,
         model="eleven_multilingual_v2",
         stream=True
     )
 
-    stream(audio)
+    stream(audio_stream)
 
     response.say("Tack, samtalet är avslutat.")  # fallback
     return str(response)
