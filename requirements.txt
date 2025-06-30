@@ -1,7 +1,7 @@
-flask==3.0.3
-twilio==8.10.0
 openai==1.13.3
-elevenlabs==1.0.4
+elevenlabs==1.1.0
+twilio==8.10.0
+flask==3.0.3
 python-dotenv==1.0.1
 requests==2.31.0
 uvicorn==0.30.1
