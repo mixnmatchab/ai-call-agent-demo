@@ -1,7 +1,5 @@
-fastapi
-uvicorn
+flask
 openai
-elevenlabs
+elevenlabs>=1.0.0,<2.0.0
 twilio
 python-dotenv
-flask
