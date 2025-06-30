@@ -1,20 +1,17 @@
-# ===== main.py =====
 import os
-from flask import Flask, request, jsonify
+from fastapi import FastAPI, Request
+from fastapi.responses import PlainTextResponse
 from twilio.twiml.voice_response import VoiceResponse
 import openai
 from elevenlabs.client import ElevenLabs
-from elevenlabs import stream
+from elevenlabs import VoiceSettings
 
-app = Flask(__name__)
+app = FastAPI()
 
 # ===== Miljövariabler =====
 openai.api_key = os.getenv("OPENAI_API_KEY")
-eleven_api_key = os.getenv("ELEVENLABS_API_KEY")
+eleven_client = ElevenLabs(api_key=os.getenv("ELEVENLABS_API_KEY"))
 voice_id = os.getenv("VOICE_ID")
-
-# ===== ElevenLabs-klient =====
-eleven_client = ElevenLabs(api_key=eleven_api_key)
 
 # ===== Prompt =====
 base_prompt = """
@@ -35,17 +32,14 @@ Vid inbokat möte – föreslå en eftermiddag eller förmiddag, fråga vad som 
 Meddela att kunden kommer få en bokningsbekräftelse på sms efter samtalet.
 """
 
-@app.route("/", methods=["GET"])
+@app.get("/")
 def index():
-    return jsonify({"message": "✅ AI Call Agent är igång – POST /voice för samtal."})
+    return {"message": "✅ AI Call Agent kör – POST /voice"}
 
-@app.route("/voice", methods=["POST"])
-def voice():
-    response = VoiceResponse()
-    user_input = request.values.get("SpeechResult", "")
-
-    if not user_input:
-        user_input = "Hej!"
+@app.post("/voice")
+async def voice(request: Request):
+    form = await request.form()
+    user_input = form.get("SpeechResult", "Hej!")
 
     try:
         reply = openai.ChatCompletion.create(
@@ -56,22 +50,21 @@ def voice():
             ]
         ).choices[0].message.content
     except Exception as e:
-        print("🔴 OpenAI-fel:", e)
-        reply = "Jag är ledsen, något gick fel med samtalet."
+        print("🔴 OpenAI error:", e)
+        reply = "Jag är ledsen, något gick fel."
 
     try:
         audio = eleven_client.generate(
             text=reply,
             voice=voice_id,
-            model_id="eleven_multilingual_v2",
+            model="eleven_multilingual_v2",
+            voice_settings=VoiceSettings(stability=0.5, similarity_boost=0.8),
             stream=True
         )
-        stream(audio)
+        eleven_client.stream(audio)
     except Exception as e:
-        print("🔴 ElevenLabs-fel:", e)
+        print("🔴 ElevenLabs error:", e)
 
-    response.say("Tack för samtalet, hej då.")
-    return str(response)
-
-if __name__ == "__main__":
-    app.run(debug=True)
+    vr = VoiceResponse()
+    vr.say("Tack för samtalet, hej då.")
+    return PlainTextResponse(str(vr), media_type="application/xml")
