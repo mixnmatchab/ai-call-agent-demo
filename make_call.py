@@ -1,18 +1,24 @@
 # make_call.py
 import os
 from twilio.rest import Client
+from dotenv import load_dotenv
 
-# Miljövariabler
+# === Ladda .env-filen ===
+load_dotenv()
+
+# === Miljövariabler ===
 account_sid = os.getenv("TWILIO_ACCOUNT_SID")
 auth_token = os.getenv("TWILIO_AUTH_TOKEN")
 from_number = os.getenv("TWILIO_PHONE_NUMBER")  # Ditt Twilio-nummer
 to_number = os.getenv("MY_PHONE_NUMBER")        # Ditt riktiga nummer
 
-# URL till /voice endpoint i Railway-appen
+# === URL till din Railway-apps voice-endpoint ===
 voice_url = "https://ai-call-agent-demo-production.up.railway.app/voice"
 
+# === Twilio-klient ===
 client = Client(account_sid, auth_token)
 
+# === Ring samtalet ===
 call = client.calls.create(
     to=to_number,
     from_=from_number,
