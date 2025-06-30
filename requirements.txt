@@ -4,3 +4,4 @@ openai
 elevenlabs
 twilio
 python-dotenv
+flask
