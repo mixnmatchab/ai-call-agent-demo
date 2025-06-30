@@ -2,19 +2,19 @@
 import os
 from flask import Flask, request, jsonify
 from twilio.twiml.voice_response import VoiceResponse
-from openai import OpenAI
-from elevenlabs import generate, stream, set_api_key
+import openai
+from elevenlabs.client import ElevenLabs
+from elevenlabs import stream
 
 app = Flask(__name__)
 
 # ===== Miljövariabler =====
-openai_api_key = os.getenv("OPENAI_API_KEY")
+openai.api_key = os.getenv("OPENAI_API_KEY")
 eleven_api_key = os.getenv("ELEVENLABS_API_KEY")
 voice_id = os.getenv("VOICE_ID")
 
-# ===== Initiera klienter =====
-openai_client = OpenAI(api_key=openai_api_key)
-set_api_key(eleven_api_key)
+# ===== ElevenLabs-klient =====
+eleven_client = ElevenLabs(api_key=eleven_api_key)
 
 # ===== Prompt =====
 base_prompt = """
@@ -47,9 +47,8 @@ def voice():
     if not user_input:
         user_input = "Hej!"
 
-    # ===== OpenAI-komplettering =====
     try:
-        reply = openai_client.chat.completions.create(
+        reply = openai.ChatCompletion.create(
             model="gpt-4",
             messages=[
                 {"role": "system", "content": base_prompt},
@@ -57,20 +56,19 @@ def voice():
             ]
         ).choices[0].message.content
     except Exception as e:
-        print("🔴 Fel i OpenAI:", e)
-        reply = "Jag är ledsen, något gick fel."
+        print("🔴 OpenAI-fel:", e)
+        reply = "Jag är ledsen, något gick fel med samtalet."
 
-    # ===== ElevenLabs-ljudgenerering =====
     try:
-        audio = generate(
+        audio = eleven_client.generate(
             text=reply,
             voice=voice_id,
-            model="eleven_multilingual_v2",
+            model_id="eleven_multilingual_v2",
             stream=True
         )
         stream(audio)
     except Exception as e:
-        print("🔴 Fel i ElevenLabs:", e)
+        print("🔴 ElevenLabs-fel:", e)
 
     response.say("Tack för samtalet, hej då.")
     return str(response)
