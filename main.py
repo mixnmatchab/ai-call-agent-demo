@@ -54,7 +54,7 @@ async def chat(req: CallRequest):
 
     response_text = completion.choices[0].message.content.strip()
 
-    # Skapa ljud från ElevenLabs
+    # Skapa ljud med ElevenLabs
     audio_response = requests.post(
         f"https://api.elevenlabs.io/v1/text-to-speech/{voice_id}",
         headers={
@@ -70,21 +70,24 @@ async def chat(req: CallRequest):
         }
     )
 
-    # Spara till lokalt (för framtida laddning till Cloudflare / S3)
+    # Spara lokalt
     with open("voice.mp3", "wb") as f:
         f.write(audio_response.content)
 
-    # Just nu: använd en publik MP3-fil som Twilio kan spela upp
-    audio_url = "https://demo.twilio.com/docs/classic.mp3"  # <- detta måste bytas till din filhost senare
+    # Ladda upp till file.io
+    with open("voice.mp3", "rb") as f:
+        upload = requests.post("https://file.io", files={"file": f})
+        upload_url = upload.json()["link"]
 
-    # Ringa dig
+    # Ring samtal via Twilio med ljudet
     call = twilio_client.calls.create(
-        twiml=f'<Response><Play>{audio_url}</Play></Response>',
-        to="+46739537750",  # <- ditt nummer
-        from_="+15017122661"  # <- ett verifierat eller köpt Twilio-nummer
+        twiml=f'<Response><Play>{upload_url}</Play></Response>',
+        to="+46739537750",  # <- ditt svenska nummer
+        from_="+15017122661"  # <- verifierat/köpt Twilio-nummer
     )
 
     return {
         "reply": response_text,
+        "mp3_url": upload_url,
         "twilio_call_sid": call.sid
     }
