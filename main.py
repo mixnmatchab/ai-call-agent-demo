@@ -1,90 +1,75 @@
 import os
 from flask import Flask, request, jsonify
 from twilio.twiml.voice_response import VoiceResponse
-from elevenlabs import generate, play, set_api_key
 from openai import OpenAI
-from dotenv import load_dotenv
-import tempfile
-import base64
-import requests
-
-load_dotenv()
-
-# Initiera API-nycklar
-OPENAI_API_KEY = os.getenv("OPENAI_API_KEY")
-TWILIO_ACCOUNT_SID = os.getenv("TWILIO_ACCOUNT_SID")
-TWILIO_AUTH_TOKEN = os.getenv("TWILIO_AUTH_TOKEN")
-TWILIO_PHONE_NUMBER = os.getenv("TWILIO_PHONE_NUMBER")
-RECIPIENT_PHONE_NUMBER = os.getenv("RECIPIENT_PHONE_NUMBER")
-ELEVEN_API_KEY = os.getenv("ELEVEN_API_KEY")
-VOICE_ID = os.getenv("VOICE_ID")
-
-set_api_key(ELEVEN_API_KEY)
-openai_client = OpenAI(api_key=OPENAI_API_KEY)
+from elevenlabs.client import ElevenLabs
+from elevenlabs import stream
 
 app = Flask(__name__)
 
-@app.route("/")
-def home():
-    return {"message": "AI Call Agent is running. Use the /chat endpoint to post messages."}
+# Environment variables
+openai_api_key = os.getenv("OPENAI_API_KEY")
+eleven_api_key = os.getenv("ELEVEN_API_KEY")
+twilio_number = os.getenv("TWILIO_PHONE_NUMBER")
+receiver_number = os.getenv("RECEIVER_PHONE_NUMBER")
 
-@app.route("/chat", methods=[POST])
-def chat():
-    data = request.get_json()
-    user_input = data.get("message")
+# Clients
+openai_client = OpenAI(api_key=openai_api_key)
+eleven_client = ElevenLabs(api_key=eleven_api_key)
 
-    prompt = f"""
-    Du är en AI-assistent som heter Sanna och jobbar för {{företagsnamn}}. Du ringer villaägare för att höra om de funderar på {{tjänst}}.
-    Efter presentationen inled gärna med att fråga om kunden känner till företaget du ringer ifrån. invänta sedan svar.
-    skriv som man pratar, inte som man skriver
+# Prompt
+base_prompt = """
+Du är en AI-assistent som heter Sanna och jobbar för {{företagsnamn}}. Du ringer villaägare för att höra om de funderar på {{tjänst}}.
+Efter presentationen inled gärna med att fråga om kunden känner till företaget du ringer ifrån. Invänta sedan svar.
+Skriv som man pratar, inte som man skriver. Upprepa inte kundens namn i varje mening.
 
-    Upprepa inte kundens namn i varje mening.
+Du ska låta som en trevlig människa – tydlig, varm och avslappnad. Inte för säljig, inte för stel. Prata som du skulle göra i ett riktigt samtal.
+Ställ en enkel inledande fråga. Följ upp naturligt beroende på vad kunden svarar. Håll dig till max 2–3 meningar per svar. Undvik långa förklaringar.
 
-    Du ska låta som en trevlig människa – tydlig, varm och avslappnad. Inte för säljig, inte för stel. Prata som du skulle göra i ett riktigt samtal.
-    Ställ en enkel inledande fråga. Följ upp naturligt beroende på vad kunden svarar. Håll dig till max 2–3 meningar per svar. Undvik långa förklaringar.
+Syftet är att ta reda på om kunden har ett intresse och försöka få till ett möte med kunden. Var tydlig med att läget är helt rätt i tiden just nu då priserna och bidragen är helt rätt.
 
-    Syftet är att ta reda på om kunden har ett intresse och försöka få till ett möte med kunden.  var tydlig med att läget är helt rätt i tiden just nu då priserna och bidragen är helt rätt. 
+Huvudmålet är att få kunden att förstå att det är ett kostnadsfritt möte och säljaren som kommer kan sin sak. Hen presenterar både ett pris och om det är lönsamt för kunden. Vi preliminärbokar inte möten utan det är viktigt att kunden förstår att de får hem en säljare till sig som går igenom kalkylen och det bästa för just dem.
 
-    Huvudmålet är att få kunden att förstå att det är ett kostnadsfritt möte och säljaren som kommer kan sin sak. hen presentera både ett pris och om det är lönsamt för kunden. vi preliminär bokar inte möten utan det är viktigt att kunden förstår att dom får hem en säljare till sig som kommer gå igenom kalkylen och det bästa för just dom. sälj in det
+Vi skickar inte ut information utan syftet är att vi ska boka ett möte.
+Vid inbokat möte – föreslå en eftermiddag eller förmiddag, fråga vad som passar kunden bäst. Vid svar säg en dag och tid (max en vecka framåt i tiden).
 
-    Vi skickar inte ut information utan syftet är att vi ska boka ett möte.
+Meddela att kunden kommer få en bokningsbekräftelse på sms efter samtalet.
+"""
 
-    Vid inbokat möte. föreslå en eftermiddag eller förmiddag, fråga vad som passar kunden bäst. Vid svar säg en dag och tid (bestäm åt kunden, max en vecka framåt i tiden) 
+@app.route("/", methods=["GET"])
+def index():
+    return jsonify({"message": "AI Call Agent is running. Use the /chat endpoint to post messages."})
 
-    Meddela att kunden kommer få en bokningsbekräftelse på sms efter samtalet
-    """
+@app.route("/voice", methods=["POST"])
+def voice():
+    response = VoiceResponse()
+    user_input = request.values.get("SpeechResult", "")
+    
+    if not user_input:
+        # Första meddelandet om inget input
+        user_input = "Hej!"
 
-    response = openai_client.chat.completions.create(
+    # Skicka input till OpenAI
+    reply = openai_client.chat.completions.create(
         model="gpt-4",
         messages=[
-            {"role": "system", "content": prompt},
+            {"role": "system", "content": base_prompt},
             {"role": "user", "content": user_input}
         ]
+    ).choices[0].message.content
+
+    # Spela upp svaret från ElevenLabs
+    audio = eleven_client.generate(
+        text=reply,
+        voice="Sanna",  # använd din valda röst här
+        model="eleven_multilingual_v2",
+        stream=True
     )
 
-    ai_reply = response.choices[0].message.content
+    stream(audio)
 
-    audio = generate(
-        text=ai_reply,
-        voice=VOICE_ID,
-        model="eleven_v3",
-        stream=False,
-        voice_settings={
-            "stability": 0.4,
-            "similarity_boost": 0.75,
-            "style": 0.2,
-            "use_speaker_boost": True
-        }
-    )
-
-    with tempfile.NamedTemporaryFile(delete=False, suffix=".mp3") as tmpfile:
-        tmpfile.write(audio)
-        tmpfile_path = tmpfile.name
-
-    with open(tmpfile_path, "rb") as f:
-        audio_base64 = base64.b64encode(f.read()).decode("utf-8")
-
-    return jsonify({"reply": ai_reply, "audio_base64": audio_base64})
+    response.say("Tack, samtalet är avslutat.")  # fallback
+    return str(response)
 
 if __name__ == "__main__":
     app.run(debug=True)
