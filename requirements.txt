@@ -1,6 +1,6 @@
 fastapi==0.110.0
 uvicorn==0.29.0
 openai==1.13.3
-elevenlabs==0.2.27
+elevenlabs==1.0.4
 twilio==8.10.0
 python-dotenv==1.0.1
