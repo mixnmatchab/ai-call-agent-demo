@@ -1,102 +1,90 @@
 import os
-from fastapi import FastAPI, Request
-from pydantic import BaseModel
-from twilio.rest import Client
-import openai
+from flask import Flask, request, jsonify
+from twilio.twiml.voice_response import VoiceResponse
+from elevenlabs import generate, play, set_api_key
+from openai import OpenAI
+from dotenv import load_dotenv
+import tempfile
+import base64
 import requests
 
-app = FastAPI()
+load_dotenv()
 
-# Miljövariabler
-openai.api_key = os.getenv("OPENAI_API_KEY")
-twilio_sid = os.getenv("TWILIO_SID")
-twilio_token = os.getenv("TWILIO_AUTH_TOKEN")
-twilio_from_number = os.getenv("TWILIO_FROM_NUMBER")
-voice_id = os.getenv("VOICE_ID")
-elevenlabs_key = os.getenv("ELEVENLABS_API_KEY")
+# Initiera API-nycklar
+OPENAI_API_KEY = os.getenv("OPENAI_API_KEY")
+TWILIO_ACCOUNT_SID = os.getenv("TWILIO_ACCOUNT_SID")
+TWILIO_AUTH_TOKEN = os.getenv("TWILIO_AUTH_TOKEN")
+TWILIO_PHONE_NUMBER = os.getenv("TWILIO_PHONE_NUMBER")
+RECIPIENT_PHONE_NUMBER = os.getenv("RECIPIENT_PHONE_NUMBER")
+ELEVEN_API_KEY = os.getenv("ELEVEN_API_KEY")
+VOICE_ID = os.getenv("VOICE_ID")
 
-client = Client(twilio_sid, twilio_token)
+set_api_key(ELEVEN_API_KEY)
+openai_client = OpenAI(api_key=OPENAI_API_KEY)
 
-class CallRequest(BaseModel):
-    customer_input: str
-    company_name: str
-    service: str
+app = Flask(__name__)
 
-@app.get("/")
-async def root():
+@app.route("/")
+def home():
     return {"message": "AI Call Agent is running. Use the /chat endpoint to post messages."}
 
-@app.post("/chat")
-async def chat(req: CallRequest):
+@app.route("/chat", methods=[POST])
+def chat():
+    data = request.get_json()
+    user_input = data.get("message")
+
     prompt = f"""
-Du är en AI-assistent som heter Sanna och jobbar för {req.company_name}.
-Du ringer villaägare för att höra om de funderar på {req.service}.
-Efter presentationen inled gärna med att fråga om kunden känner till företaget du ringer ifrån.
-Invänta svar. Skriv som man pratar, inte som man skriver.
+    Du är en AI-assistent som heter Sanna och jobbar för {{företagsnamn}}. Du ringer villaägare för att höra om de funderar på {{tjänst}}.
+    Efter presentationen inled gärna med att fråga om kunden känner till företaget du ringer ifrån. invänta sedan svar.
+    skriv som man pratar, inte som man skriver
 
-Upprepa inte kundens namn i varje mening.
+    Upprepa inte kundens namn i varje mening.
 
-Du ska låta som en trevlig människa – tydlig, varm och avslappnad.
-För inte sälja, inte för stel. Ställ en enkel inledande fråga. Följ upp naturligt beroende på vad kunden säger.
+    Du ska låta som en trevlig människa – tydlig, varm och avslappnad. Inte för säljig, inte för stel. Prata som du skulle göra i ett riktigt samtal.
+    Ställ en enkel inledande fråga. Följ upp naturligt beroende på vad kunden svarar. Håll dig till max 2–3 meningar per svar. Undvik långa förklaringar.
 
-Syftet är att ta reda på om kunden har ett intresse och försöka få till ett möte med en kollega.
+    Syftet är att ta reda på om kunden har ett intresse och försöka få till ett möte med kunden.  var tydlig med att läget är helt rätt i tiden just nu då priserna och bidragen är helt rätt. 
 
-Huvudmålet är att få kunden att förstå att det är kostnadsfritt och att kunden själv kommer kontakta oss.
+    Huvudmålet är att få kunden att förstå att det är ett kostnadsfritt möte och säljaren som kommer kan sin sak. hen presentera både ett pris och om det är lönsamt för kunden. vi preliminär bokar inte möten utan det är viktigt att kunden förstår att dom får hem en säljare till sig som kommer gå igenom kalkylen och det bästa för just dom. sälj in det
 
-Vi skickar inte ut information utan syftet är att få till ett möte.
+    Vi skickar inte ut information utan syftet är att vi ska boka ett möte.
 
-Vid inbokad möte, föreslå en eftermiddag eller förmiddag, fråga vad som passar kunden bäst.
-Skriv avslutningen naturligt.
+    Vid inbokat möte. föreslå en eftermiddag eller förmiddag, fråga vad som passar kunden bäst. Vid svar säg en dag och tid (bestäm åt kunden, max en vecka framåt i tiden) 
 
-Meddela att kunden kommer få en bokningsbekräftelse på sms efter samtalet.
+    Meddela att kunden kommer få en bokningsbekräftelse på sms efter samtalet
+    """
 
-Kund: {req.customer_input}
-Sanna:
-"""
-
-    # Skicka till OpenAI
-    response = openai.ChatCompletion.create(
+    response = openai_client.chat.completions.create(
         model="gpt-4",
         messages=[
-            {"role": "user", "content": prompt}
+            {"role": "system", "content": prompt},
+            {"role": "user", "content": user_input}
         ]
     )
 
-    ai_response = response.choices[0].message.content.strip()
+    ai_reply = response.choices[0].message.content
 
-    # ElevenLabs röstgenerering
-    audio_response = requests.post(
-        f"https://api.elevenlabs.io/v1/text-to-speech/{voice_id}",
-        headers={
-            "xi-api-key": elevenlabs_key,
-            "Content-Type": "application/json"
-        },
-        json={
-            "text": ai_response,
-            "model_id": "eleven_monolingual_v1",
-            "voice_settings": {
-                "stability": 0.5,
-                "similarity_boost": 0.75
-            }
+    audio = generate(
+        text=ai_reply,
+        voice=VOICE_ID,
+        model="eleven_v3",
+        stream=False,
+        voice_settings={
+            "stability": 0.4,
+            "similarity_boost": 0.75,
+            "style": 0.2,
+            "use_speaker_boost": True
         }
     )
 
-    audio_path = "/tmp/voice.mp3"
-    with open(audio_path, "wb") as f:
-        f.write(audio_response.content)
+    with tempfile.NamedTemporaryFile(delete=False, suffix=".mp3") as tmpfile:
+        tmpfile.write(audio)
+        tmpfile_path = tmpfile.name
 
-    # Ringa samtal via Twilio (detta triggar ett voice call)
-    call = client.calls.create(
-        twiml=f'<Response><Play>https://{os.getenv("RAILWAY_STATIC_URL")}/voice.mp3</Play></Response>',
-        to=os.getenv("TO_NUMBER"),
-        from_=twilio_from_number
-    )
+    with open(tmpfile_path, "rb") as f:
+        audio_base64 = base64.b64encode(f.read()).decode("utf-8")
 
-    return {"message": "Samtal initierat", "response": ai_response}
+    return jsonify({"reply": ai_reply, "audio_base64": audio_base64})
 
-
-@app.route("/twilio/stream", methods=["POST"])
-def stream_audio():
-    data = request.get_json()
-    print("Received audio stream event:", data)
-    return "ok", 200
+if __name__ == "__main__":
+    app.run(debug=True)
