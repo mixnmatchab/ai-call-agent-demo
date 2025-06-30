@@ -2,10 +2,18 @@ from fastapi import FastAPI
 from pydantic import BaseModel
 import openai
 import os
+from twilio.rest import Client
+import requests
 
 app = FastAPI()
 
 openai.api_key = os.getenv("OPENAI_API_KEY")
+twilio_sid = os.getenv("TWILIO_SID")
+twilio_token = os.getenv("TWILIO_AUTH_TOKEN")
+voice_id = os.getenv("VOICE_ID")
+elevenlabs_api_key = os.getenv("ELEVENLABS_API_KEY")
+
+twilio_client = Client(twilio_sid, twilio_token)
 
 class CallRequest(BaseModel):
     customer_input: str
@@ -15,34 +23,68 @@ class CallRequest(BaseModel):
 @app.post("/chat")
 async def chat(req: CallRequest):
     prompt = f"""
-Du är en AI-assistent som heter Sanna och jobbar för {req.company_name}. Du ringer villaägare för att höra om de funderar på {req.service}.
-Efter presentationen inled gärna med att fråga om kunden känner till företaget du ringer ifrån. invänta sedan svar.
-skriv som man pratar, inte som man skriver
+    Du är en AI-assistent som heter Sanna och jobbar för {req.company_name}. Du ringer villaägare för att höra om de funderar på {req.service}.
+    Efter presentationen inled gärna med att fråga om kunden känner till företaget du ringer ifrån. invänta sedan svar.
 
-Upprepa inte kundens namn i varje mening.
+    skriv som man pratar, inte som man skriver.
 
-Du ska låta som en trevlig människa – tydlig, varm och avslappnad. Inte för säljig, inte för stel. Prata som du skulle göra i ett riktigt samtal.
-Ställ en enkel inledande fråga. Följ upp naturligt beroende på vad kunden svarar. Håll dig till max 2–3 meningar per svar. Undvik långa förklaringar.
+    Upprepa inte kundens namn i varje mening.
 
-Syftet är att ta reda på om kunden har ett intresse och försöka få till ett möte med kunden.  var tydlig med att läget är helt rätt i tiden just nu då priserna och bidragen är helt rätt. 
+    Du ska låta som en trevlig människa – tydlig, varm och avslappnad. Inte för säljig, inte för stel. 
+    Ställ en enkel inledande fråga. Följ upp naturligt med små frågor i taget, som om du vore en människa. Invänta svar.
 
-Huvudmålet är att få kunden att förstå att det är ett kostnadsfritt möte och säljaren som kommer kan sin sak. hen presentera både ett pris och om det är lönsamt för kunden. vi preliminär bokar inte möten utan det är viktigt att kunden förstår att dom får hem en säljare till sig som kommer gå igenom kalkylen och det bästa för just dom. sälj in det
+    Syftet är att ta reda på om kunden har ett intresse och försöka få till ett möte med kund.
 
-Vi skickar inte ut information utan syftet är att vi ska boka ett möte.
+    Huvudmålet är att få kunden att förstå att det är kostnadsfritt och helt utan säljare som kommer och knackar på dörren.
 
-Vid inbokat möte. föreslå en eftermiddag eller förmiddag, fråga vad som passar kunden bäst. Vid svar säg en dag och tid (bestäm åt kunden, max en vecka framåt i tiden) 
+    Vi skickar inte ut information utan syftet är att boka samtal eller möte.
 
-Meddela att kunden kommer få en bokningsbekräftelse på sms efter samtalet
+    Vid inbokat möte, föreslå en eftermiddag eller förmiddag, fråga vad som passar kunden bäst. Skriv vad kunden säger.
 
-Kund: {req.customer_input}
-Sanna:"""
+    Meddela att kunden kommer få en bokningsbekräftelse på sms efter samtalet.
+
+    Kund: {req.customer_input}
+    Sanna:
+    """
 
     completion = openai.ChatCompletion.create(
         model="gpt-4",
-        messages=[
-            {"role": "user", "content": prompt}
-        ],
-        max_tokens=200
+        messages=[{"role": "user", "content": prompt}]
     )
 
-    return {"response": completion.choices[0].message["content"]}
+    response_text = completion.choices[0].message.content.strip()
+
+    # Skapa ljud från ElevenLabs
+    audio_response = requests.post(
+        f"https://api.elevenlabs.io/v1/text-to-speech/{voice_id}",
+        headers={
+            "xi-api-key": elevenlabs_api_key,
+            "Content-Type": "application/json"
+        },
+        json={
+            "text": response_text,
+            "voice_settings": {
+                "stability": 0.5,
+                "similarity_boost": 0.75
+            }
+        }
+    )
+
+    # Spara till lokalt (för framtida laddning till Cloudflare / S3)
+    with open("voice.mp3", "wb") as f:
+        f.write(audio_response.content)
+
+    # Just nu: använd en publik MP3-fil som Twilio kan spela upp
+    audio_url = "https://demo.twilio.com/docs/classic.mp3"  # <- detta måste bytas till din filhost senare
+
+    # Ringa dig
+    call = twilio_client.calls.create(
+        twiml=f'<Response><Play>{audio_url}</Play></Response>',
+        to="+46739537750",  # <- ditt nummer
+        from_="+15017122661"  # <- ett verifierat eller köpt Twilio-nummer
+    )
+
+    return {
+        "reply": response_text,
+        "twilio_call_sid": call.sid
+    }
