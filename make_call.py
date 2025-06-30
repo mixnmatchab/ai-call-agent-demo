@@ -1,5 +1,7 @@
 # make_call.py
 import os
+from dotenv import load_dotenv
+load_dotenv()
 from twilio.rest import Client
 from dotenv import load_dotenv
 
