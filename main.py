@@ -1,20 +1,19 @@
 import os
-import openai
-from flask import Flask, request, jsonify
-from twilio.twiml.voice_response import VoiceResponse
+from fastapi import FastAPI, Request, Form
+from fastapi.responses import PlainTextResponse
+from dotenv import load_dotenv
+from openai import OpenAI
 from elevenlabs.client import ElevenLabs
 
-app = Flask(__name__)
+load_dotenv()
 
-# === Miljövariabler ===
-openai.api_key = os.getenv("OPENAI_API_KEY")
+openai_api_key = os.getenv("OPENAI_API_KEY")
 eleven_api_key = os.getenv("ELEVENLABS_API_KEY")
 voice_id = os.getenv("VOICE_ID")
 
-# === ElevenLabs-klient ===
+openai_client = OpenAI(api_key=openai_api_key)
 eleven_client = ElevenLabs(api_key=eleven_api_key)
 
-# === Prompt ===
 base_prompt = """
 Du är en AI-assistent som heter Sanna och jobbar för {{företagsnamn}}. Du ringer villaägare för att höra om de funderar på {{tjänst}}.
 Efter presentationen inled gärna med att fråga om kunden känner till företaget du ringer ifrån. Invänta sedan svar.
@@ -33,50 +32,36 @@ Vid inbokat möte – föreslå en eftermiddag eller förmiddag, fråga vad som 
 Meddela att kunden kommer få en bokningsbekräftelse på sms efter samtalet.
 """
 
-# === Rotendpoint ===
-@app.route("/", methods=["GET"])
-def index():
-    return jsonify({"message": "✅ AI Call Agent är igång – POST /voice för samtal."})
+app = FastAPI()
 
-# === Twilio voice endpoint ===
-@app.route("/voice", methods=["POST"])
-def voice():
-    response = VoiceResponse()
-    user_input = request.values.get("SpeechResult", "")
+@app.get("/")
+async def root():
+    return {"message": "✅ AI Call Agent är igång – POST /voice för samtal."}
 
-    if not user_input:
-        user_input = "Hej!"
-
-    # === Anropa OpenAI ===
+@app.post("/voice", response_class=PlainTextResponse)
+async def voice(SpeechResult: str = Form(...)):
     try:
-        result = openai.ChatCompletion.create(
+        reply = openai_client.chat.completions.create(
             model="gpt-4",
             messages=[
                 {"role": "system", "content": base_prompt},
-                {"role": "user", "content": user_input}
+                {"role": "user", "content": SpeechResult}
             ]
-        )
-        reply_text = result.choices[0].message['content']
+        ).choices[0].message.content
     except Exception as e:
-        print("🔴 Fel med OpenAI:", e)
-        reply_text = "Jag är ledsen, något gick fel med samtalet."
+        print("🔴 OpenAI-fel:", e)
+        reply = "Jag är ledsen, något gick fel med samtalet."
 
-    # === Skapa röst med ElevenLabs ===
     try:
-        audio_stream = eleven_client.generate(
-            text=reply_text,
+        audio = eleven_client.generate(
+            text=reply,
             voice=voice_id,
             model_id="eleven_multilingual_v2",
             stream=True
         )
-        for _ in audio_stream:
-            pass
+        for chunk in audio:
+            pass  # Stream används inte i denna version
     except Exception as e:
-        print("🔴 Fel med ElevenLabs:", e)
+        print("🔴 ElevenLabs-fel:", e)
 
-    response.say("Tack för samtalet, hej då.")
-    return str(response)
-
-# === Start Flask-app ===
-if __name__ == "__main__":
-    app.run(debug=True)
+    return "Tack för samtalet. Hej då!"
