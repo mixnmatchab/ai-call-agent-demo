@@ -93,3 +93,10 @@ Sanna:
     )
 
     return {"message": "Samtal initierat", "response": ai_response}
+
+
+@app.route("/twilio/stream", methods=["POST"])
+def stream_audio():
+    data = request.get_json()
+    print("Received audio stream event:", data)
+    return "ok", 200
