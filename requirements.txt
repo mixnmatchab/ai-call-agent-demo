@@ -3,3 +3,4 @@ openai
 elevenlabs>=1.1.0,<2.0.0
 twilio
 python-dotenv
+uvicorn
