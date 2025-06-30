@@ -1,5 +1,3 @@
-print(f"OpenAI API Key Loaded: {openai_api_key}")
-
 import os
 from flask import Flask, request, jsonify
 from twilio.twiml.voice_response import VoiceResponse
@@ -10,6 +8,7 @@ app = Flask(__name__)
 
 # Miljövariabler
 openai_api_key = os.getenv("OPENAI_API_KEY")
+print(f"OpenAI API Key Loaded: {openai_api_key}")
 eleven_api_key = os.getenv("ELEVENLABS_API_KEY")
 voice_id = os.getenv("VOICE_ID")
 
