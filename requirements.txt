@@ -4,3 +4,4 @@ elevenlabs==1.0.4
 twilio==8.10.0
 python-dotenv==1.0.1
 requests==2.31.0
+uvicorn==0.30.1
