@@ -63,7 +63,7 @@ def voice():
         stream=True
     )
 
-    # Streamingen triggas genom att loopa (även om vi inte gör något med varje del)
+    # Streama ljudet (loop krävs för att trigga uppspelning, även om vi inte använder chunken direkt)
     for chunk in audio:
         pass
 
