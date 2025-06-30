@@ -1,3 +1,5 @@
+print(f"OpenAI API Key Loaded: {openai_api_key}")
+
 import os
 from flask import Flask, request, jsonify
 from twilio.twiml.voice_response import VoiceResponse
