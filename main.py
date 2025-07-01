@@ -22,19 +22,24 @@ def voice():
 
     response = VoiceResponse()
 
-    # 🔹 Första anropet – invänta kundens hälsning
+    def fallback_and_listen(msg="Jag kunde inte svara just nu. Vad vill du prata om?"):
+        response.say(msg, language="sv-SE")
+        gather = Gather(input="speech", language="sv-SE", speech_timeout="auto", action="/voice", method="POST")
+        gather.say("Jag lyssnar.", language="sv-SE")
+        response.append(gather)
+        return Response(str(response), mimetype="application/xml")
+
     if not user_input:
         gather = Gather(input="speech", language="sv-SE", speech_timeout="auto", action="/voice", method="POST")
         gather.say("Hej, vänta gärna kvar en stund...", language="sv-SE")
         response.append(gather)
         return Response(str(response), mimetype="application/xml")
 
-    # 🔹 Nu har kunden sagt något – AI svarar
     try:
         completion = openai.chat.completions.create(
             model="gpt-3.5-turbo",
             messages=[
-                {"role": "system", "content": "Du är en AI-assistent som heter Sanna och jobbar för Handlr. Det här är inledningen på ett naturligt samtal. Presentera dig som Sanna och ställ en första vänlig fråga."},
+                {"role": "system", "content": "Du är en AI-assistent som heter Sanna från Handlr. För ett vänligt samtal med kunden."},
                 {"role": "user", "content": user_input}
             ]
         )
@@ -42,8 +47,7 @@ def voice():
         print("🤖 GPT svar:", gpt_reply)
     except Exception as e:
         print("❌ GPT-fel:", str(e))
-        response.say("Ett fel uppstod i GPT-tjänsten.", language="sv-SE")
-        return Response(str(response), mimetype="application/xml")
+        return fallback_and_listen("Jag kunde inte hämta något svar just nu.")
 
     try:
         audio = requests.post(
@@ -63,18 +67,19 @@ def voice():
                 f.write(audio.content)
         else:
             print("⚠️ ElevenLabs API-fel:", audio.status_code, audio.text)
-            response.say("Röstgenerering misslyckades.", language="sv-SE")
-            return Response(str(response), mimetype="application/xml")
+            return fallback_and_listen("Jag kunde inte generera något ljud just nu.")
     except Exception as e:
         print("❌ ElevenLabs-fel:", str(e))
-        response.say("Kunde inte spela upp svaret.", language="sv-SE")
-        return Response(str(response), mimetype="application/xml")
+        return fallback_and_listen("Jag kunde inte spela upp svaret just nu.")
 
     hosted_url = request.url_root.rstrip("/") + "/audio"
-    response.play(hosted_url)
+    if os.path.exists("response.mp3"):
+        response.play(hosted_url)
+    else:
+        return fallback_and_listen("Jag kunde inte hitta ljudfilen.")
 
     gather = Gather(input="speech", language="sv-SE", speech_timeout="auto", action="/voice", method="POST")
-    gather.say("Varsågod, vad vill du prata om?", language="sv-SE")
+    gather.say("Vad mer vill du veta?", language="sv-SE")
     response.append(gather)
 
     return Response(str(response), mimetype="application/xml")
