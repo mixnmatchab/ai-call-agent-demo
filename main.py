@@ -1,19 +1,16 @@
 import os
-from flask import Flask, request, jsonify
+from flask import Flask, request, jsonify, send_file
 from twilio.twiml.voice_response import VoiceResponse
 import openai
 from elevenlabs.client import ElevenLabs
+from elevenlabs import save
 
 app = Flask(__name__)
 
 # ===== Miljövariabler =====
-openai_api_key = os.getenv("OPENAI_API_KEY")
-eleven_api_key = os.getenv("ELEVENLABS_API_KEY")
-voice_id = os.getenv("VOICE_ID")  # Viktigt! Kontrollera att denna är korrekt inställd
-
-# ===== Initiera API-nycklar =====
-openai.api_key = openai_api_key
-eleven = ElevenLabs(api_key=eleven_api_key)
+openai.api_key = os.getenv("OPENAI_API_KEY")
+eleven = ElevenLabs(api_key=os.getenv("ELEVENLABS_API_KEY"))
+voice_id = os.getenv("VOICE_ID")
 
 # ===== Prompt =====
 base_prompt = """
@@ -46,8 +43,8 @@ def voice():
     if not user_input:
         user_input = "Hej!"
 
-    # ===== OpenAI-komplettering =====
     try:
+        # ===== OpenAI =====
         reply = openai.ChatCompletion.create(
             model="gpt-4",
             messages=[
@@ -55,26 +52,32 @@ def voice():
                 {"role": "user", "content": user_input}
             ]
         ).choices[0].message.content
-    except Exception as e:
-        import traceback
-        print("🔴 Fel i OpenAI:", e)
-        traceback.print_exc()
-        reply = "Jag är ledsen, något gick fel."
+        print(f"🧠 OpenAI-svar: {reply}")
 
-    # ===== ElevenLabs-ljudgenerering =====
-    try:
+        # ===== ElevenLabs (spara ljudfil) =====
         audio = eleven.generate(
             text=reply,
             voice=voice_id,
-            model="eleven_multilingual_v2",
-            stream=True
+            model="eleven_multilingual_v2"
         )
-        eleven.stream(audio)
-    except Exception as e:
-        print("🔴 Fel i ElevenLabs:", e)
+        save(audio, "static/reply.mp3")  # Viktigt: mappen 'static' måste finnas!
 
-    response.say("Tack för samtalet, hej då.")
+        # ===== Twilio spelar upp ljudet via URL =====
+        response.play("https://ai-call-agent-demo-production.up.railway.app/audio")
+
+    except Exception as e:
+        print("🔴 Fel:", e)
+        response.say("Jag är ledsen, något gick fel.")
+
     return str(response)
+
+@app.route("/audio", methods=["GET"])
+def serve_audio():
+    try:
+        return send_file("static/reply.mp3", mimetype="audio/mpeg")
+    except Exception as e:
+        print("🔴 Fel vid hämtning av ljudfil:", e)
+        return "Fel vid hämtning av ljudfil", 500
 
 if __name__ == "__main__":
     app.run(host="0.0.0.0", port=int(os.environ.get("PORT", 5000)))
