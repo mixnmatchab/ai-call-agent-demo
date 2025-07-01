@@ -30,14 +30,14 @@ def voice():
         response.append(gather)
         return Response(str(response), mimetype="application/xml")
 
-    # 🔹 Första samtalsrundan – invänta kundens röst innan AI svarar
     if not user_input:
+        # 🔹 Första interaktion: ge kunden chans att säga hej
         gather = Gather(input="speech", language="sv-SE", speech_timeout="auto", action="/voice", method="POST")
-        gather.say("Hej! Det här är Sanna från Handlr. Vänta gärna kvar en stund...", language="sv-SE")
+        gather.say("Hej! Det här är Sanna från Handlr. Jag ringer angående projekt i hemmet. Vad kan jag hjälpa dig med idag?", language="sv-SE")
         response.append(gather)
         return Response(str(response), mimetype="application/xml")
 
-    # 🔹 GPT-svar
+    # 🔹 GPT-anrop
     try:
         completion = openai.ChatCompletion.create(
             model="gpt-3.5-turbo",
@@ -46,9 +46,9 @@ def voice():
                     "role": "system",
                     "content": (
                         "Du är en AI-assistent som heter Sanna och jobbar för Handlr. "
-                        "Du ringer villaägare för att höra om de funderar på att ta hjälp med projekt i hemmet. "
-                        "Svara alltid naturligt, trevligt och som om du var människa. Håll svaren korta men vänliga. "
-                        "Avsluta med att ställa en enkel fråga tillbaka så att konversationen fortsätter."
+                        "Du ringer villaägare för att höra om de funderar på att ta hjälp med något projekt i hemmet, "
+                        "som solceller, fönsterbyte eller renovering. "
+                        "Svara trevligt, kortfattat och avsluta med en enkel fråga. Du ska låta mänsklig."
                     )
                 },
                 {"role": "user", "content": user_input}
@@ -61,7 +61,7 @@ def voice():
         traceback.print_exc()
         return fallback_and_listen("Jag kunde inte hämta något svar just nu.")
 
-    # 🔹 ElevenLabs text-to-speech
+    # 🔹 ElevenLabs-anrop
     try:
         audio = requests.post(
             f"https://api.elevenlabs.io/v1/text-to-speech/{elevenlabs_voice_id}",
@@ -72,12 +72,15 @@ def voice():
             json={
                 "text": gpt_reply,
                 "model_id": "eleven_monolingual_v1",
-                "voice_settings": {"stability": 0.5, "similarity_boost": 0.75}
-            }
+                "voice_settings": {"stability": 0.4, "similarity_boost": 0.8}
+            },
+            stream=True  # Viktigt!
         )
         if audio.status_code == 200:
             with open("response.mp3", "wb") as f:
-                f.write(audio.content)
+                for chunk in audio.iter_content(chunk_size=1024):
+                    if chunk:
+                        f.write(chunk)
         else:
             print("⚠️ ElevenLabs API-fel:", audio.status_code, audio.text)
             return fallback_and_listen("Jag kunde inte generera ljudet.")
@@ -86,16 +89,15 @@ def voice():
         traceback.print_exc()
         return fallback_and_listen("Jag kunde inte spela upp svaret.")
 
-    # 🔹 Spela upp ljudfilen
+    # 🔹 Spela upp
     hosted_url = request.url_root.rstrip("/") + "/audio"
     if os.path.exists("response.mp3"):
         response.play(hosted_url)
     else:
         return fallback_and_listen("Jag kunde inte hitta ljudfilen.")
 
-    # 🔹 Lyssna på nästa svar
+    # 🔹 Lyssna efter nytt svar (inga extra frågor längre)
     gather = Gather(input="speech", language="sv-SE", speech_timeout="auto", action="/voice", method="POST")
-    gather.say("Vad mer vill du veta?", language="sv-SE")
     response.append(gather)
 
     return Response(str(response), mimetype="application/xml")
