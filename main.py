@@ -2,7 +2,7 @@ import os
 import openai
 import requests
 from flask import Flask, request, Response, send_file
-from twilio.twiml.voice_response import VoiceResponse
+from twilio.twiml.voice_response import VoiceResponse, Gather
 
 app = Flask(__name__)
 
@@ -23,11 +23,11 @@ def voice():
     response = VoiceResponse()
 
     if not user_input:
-        response.say("Jag hörde inte vad du sa. Kan du upprepa?", language="sv-SE")
-        response.listen()
+        gather = Gather(input="speech", language="sv-SE", speech_timeout="auto", action="/voice", method="POST")
+        gather.say("Jag hörde inte vad du sa. Kan du upprepa?", language="sv-SE")
+        response.append(gather)
         return Response(str(response), mimetype="application/xml")
 
-    # 🔹 GPT-anrop
     try:
         completion = openai.chat.completions.create(
             model="gpt-4",
@@ -43,7 +43,6 @@ def voice():
         response.say("Ett fel uppstod i GPT-tjänsten.", language="sv-SE")
         return Response(str(response), mimetype="application/xml")
 
-    # 🔹 ElevenLabs-anrop (krav att fungera)
     try:
         audio = requests.post(
             f"https://api.elevenlabs.io/v1/text-to-speech/{elevenlabs_voice_id}",
@@ -71,10 +70,14 @@ def voice():
         response.say("Röstgenerering misslyckades. Försök igen.", language="sv-SE")
         return Response(str(response), mimetype="application/xml")
 
-    # 🔊 Spela upp ElevenLabs-ljudet
     hosted_url = request.url_root.rstrip("/") + "/audio"
     response.play(hosted_url)
-    response.listen()
+
+    # Lägg till nytt Gather för nästa svar
+    gather = Gather(input="speech", language="sv-SE", speech_timeout="auto", action="/voice", method="POST")
+    gather.say("Vad vill du veta mer om?", language="sv-SE")
+    response.append(gather)
+
     return Response(str(response), mimetype="application/xml")
 
 @app.route("/audio", methods=["GET"])
