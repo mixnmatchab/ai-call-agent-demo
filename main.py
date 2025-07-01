@@ -1,21 +1,24 @@
+# ===== main.py (Flask-baserad AI-call-agent med ElevenLabs och OpenAI v1+) =====
 import os
 from flask import Flask, request, jsonify
 from twilio.twiml.voice_response import VoiceResponse
 from openai import OpenAI
 from elevenlabs.client import ElevenLabs
+from elevenlabs import stream
 
+# === Initiera Flask ===
 app = Flask(__name__)
 
-# ===== Miljövariabler =====
+# === Ladda API-nycklar från miljön ===
 openai_api_key = os.getenv("OPENAI_API_KEY")
 eleven_api_key = os.getenv("ELEVENLABS_API_KEY")
 voice_id = os.getenv("VOICE_ID")
 
-# ===== Initiera klienter =====
-openai_client = OpenAI(api_key=openai_api_key)
+# === Initiera klienter ===
+openai = OpenAI(api_key=openai_api_key)
 eleven = ElevenLabs(api_key=eleven_api_key)
 
-# ===== Prompt =====
+# === Prompt / Systeminstruktion ===
 base_prompt = """
 Du är en AI-assistent som heter Sanna och jobbar för {{företagsnamn}}. Du ringer villaägare för att höra om de funderar på {{tjänst}}.
 Efter presentationen inled gärna med att fråga om kunden känner till företaget du ringer ifrån. Invänta sedan svar.
@@ -41,14 +44,11 @@ def index():
 @app.route("/voice", methods=["POST"])
 def voice():
     response = VoiceResponse()
-    user_input = request.values.get("SpeechResult", "")
+    user_input = request.values.get("SpeechResult", "Hej!")
 
-    if not user_input:
-        user_input = "Hej!"
-
-    # ===== OpenAI-komplettering =====
+    # === GPT-svar ===
     try:
-        completion = openai_client.chat.completions.create(
+        completion = openai.chat.completions.create(
             model="gpt-4",
             messages=[
                 {"role": "system", "content": base_prompt},
@@ -60,20 +60,20 @@ def voice():
         print("🔴 Fel i OpenAI:", e)
         reply = "Jag är ledsen, något gick fel."
 
-    # ===== ElevenLabs-ljudgenerering =====
+    # === ElevenLabs ljud ===
     try:
-        audio = eleven.generate(
+        audio_stream = eleven.generate(
             text=reply,
             voice=voice_id,
             model="eleven_multilingual_v2",
             stream=True
         )
-        eleven.stream(audio)
+        stream(audio_stream)
     except Exception as e:
         print("🔴 Fel i ElevenLabs:", e)
 
-    response.say("Tack för samtalet, hej då.", language="sv-SE")
+    response.say("Tack för samtalet, hej då.")
     return str(response)
 
 if __name__ == "__main__":
-   app.run(host="0.0.0.0", port=int(os.environ.get("PORT", 5000)))
+    app.run(host="0.0.0.0", port=int(os.environ.get("PORT", 5000)))
