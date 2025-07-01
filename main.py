@@ -1,17 +1,15 @@
-# ===== main.py =====
 import os
-from flask import Flask, request, jsonify, send_file
+from flask import Flask, request, jsonify
 from twilio.twiml.voice_response import VoiceResponse
 import openai
 from elevenlabs.client import ElevenLabs
-import uuid
 
 app = Flask(__name__)
 
 # ===== Miljövariabler =====
 openai_api_key = os.getenv("OPENAI_API_KEY")
 eleven_api_key = os.getenv("ELEVENLABS_API_KEY")
-voice_id = os.getenv("VOICE_ID")
+voice_id = os.getenv("VOICE_ID")  # Viktigt! Kontrollera att denna är korrekt inställd
 
 # ===== Initiera API-nycklar =====
 openai.api_key = openai_api_key
@@ -48,6 +46,7 @@ def voice():
     if not user_input:
         user_input = "Hej!"
 
+    # ===== OpenAI-komplettering =====
     try:
         reply = openai.ChatCompletion.create(
             model="gpt-4",
@@ -57,24 +56,24 @@ def voice():
             ]
         ).choices[0].message.content
     except Exception as e:
+        import traceback
         print("🔴 Fel i OpenAI:", e)
+        traceback.print_exc()
         reply = "Jag är ledsen, något gick fel."
 
+    # ===== ElevenLabs-ljudgenerering =====
     try:
-        filename = f"reply_{uuid.uuid4()}.mp3"
-        filepath = os.path.join("static", filename)
         audio = eleven.generate(
             text=reply,
             voice=voice_id,
-            model="eleven_multilingual_v2"
+            model="eleven_multilingual_v2",
+            stream=True
         )
-        with open(filepath, "wb") as f:
-            f.write(audio)
-        response.play(f"https://{request.host}/static/{filename}")
+        eleven.stream(audio)
     except Exception as e:
         print("🔴 Fel i ElevenLabs:", e)
-        response.say("Jag är ledsen, något gick fel.")
 
+    response.say("Tack för samtalet, hej då.")
     return str(response)
 
 if __name__ == "__main__":
