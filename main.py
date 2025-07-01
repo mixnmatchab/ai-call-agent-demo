@@ -40,10 +40,10 @@ def voice():
         print("🤖 GPT svar:", gpt_reply)
     except Exception as e:
         print("❌ GPT-fel:", str(e))
-        response.say("Tyvärr uppstod ett problem. Försök igen senare.", language="sv-SE")
+        response.say("Ett fel uppstod i GPT-tjänsten.", language="sv-SE")
         return Response(str(response), mimetype="application/xml")
 
-    # 🔹 ElevenLabs-anrop
+    # 🔹 ElevenLabs-anrop (krav att fungera)
     try:
         audio = requests.post(
             f"https://api.elevenlabs.io/v1/text-to-speech/{elevenlabs_voice_id}",
@@ -58,29 +58,22 @@ def voice():
             }
         )
 
-        if audio.status_code == 200:
-            with open("response.mp3", "wb") as f:
-                f.write(audio.content)
-        else:
+        if audio.status_code != 200:
             print("⚠️ ElevenLabs API-fel:", audio.status_code, audio.text)
-            response.say(gpt_reply, language="sv-SE")
-            response.listen()
+            response.say("Tyvärr, kunde inte spela upp svaret.", language="sv-SE")
             return Response(str(response), mimetype="application/xml")
+
+        with open("response.mp3", "wb") as f:
+            f.write(audio.content)
 
     except Exception as e:
         print("❌ ElevenLabs-fel:", str(e))
-        response.say(gpt_reply, language="sv-SE")
-        response.listen()
+        response.say("Röstgenerering misslyckades. Försök igen.", language="sv-SE")
         return Response(str(response), mimetype="application/xml")
 
+    # 🔊 Spela upp ElevenLabs-ljudet
     hosted_url = request.url_root.rstrip("/") + "/audio"
-
-    # 🔹 Om filen finns – spela upp
-    if os.path.exists("response.mp3"):
-        response.play(hosted_url)
-    else:
-        response.say(gpt_reply, language="sv-SE")
-
+    response.play(hosted_url)
     response.listen()
     return Response(str(response), mimetype="application/xml")
 
