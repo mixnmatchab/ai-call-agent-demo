@@ -22,15 +22,14 @@ def voice():
 
     response = VoiceResponse()
 
-    # 🔹 Om SpeechResult är tomt → detta är första gången /voice anropas
+    # 🔹 Första anropet – börja samtalet
     if not user_input:
-        # Vi låter GPT starta samtalet
         system_prompt = "Du är en AI-assistent som heter Sanna och jobbar för Handlr. Börja samtalet naturligt på svenska med att presentera dig och fråga om kunden funderar på något projekt i sitt hus."
         user_prompt = "Starta samtalet"
 
         try:
             completion = openai.chat.completions.create(
-                model="gpt-4",
+                model="gpt-3.5-turbo",
                 messages=[
                     {"role": "system", "content": system_prompt},
                     {"role": "user", "content": user_prompt}
@@ -43,7 +42,6 @@ def voice():
             response.say("Tyvärr kunde vi inte starta samtalet. Försök igen senare.", language="sv-SE")
             return Response(str(response), mimetype="application/xml")
 
-        # ElevenLabs
         try:
             audio = requests.post(
                 f"https://api.elevenlabs.io/v1/text-to-speech/{elevenlabs_voice_id}",
@@ -69,20 +67,18 @@ def voice():
             response.say("Kunde inte spela upp svaret. Försök igen.", language="sv-SE")
             return Response(str(response), mimetype="application/xml")
 
-        # Spela upp Sannas första replik
         hosted_url = request.url_root.rstrip("/") + "/audio"
         response.play(hosted_url)
 
-        # Lyssna på kundens svar
         gather = Gather(input="speech", language="sv-SE", speech_timeout="auto", action="/voice", method="POST")
         gather.say("Varsågod, du kan svara nu.", language="sv-SE")
         response.append(gather)
         return Response(str(response), mimetype="application/xml")
 
-    # 🔹 Nu har användaren svarat – fortsätt samtalet
+    # 🔹 Fortsätt konversationen
     try:
         completion = openai.chat.completions.create(
-            model="gpt-4",
+            model="gpt-3.5-turbo",
             messages=[
                 {"role": "system", "content": "Fortsätt samtalet naturligt som en AI-assistent från Handlr. Svara på vad kunden säger och ställ en ny fråga."},
                 {"role": "user", "content": user_input}
@@ -95,7 +91,6 @@ def voice():
         response.say("Ett fel uppstod i GPT-tjänsten.", language="sv-SE")
         return Response(str(response), mimetype="application/xml")
 
-    # ElevenLabs igen
     try:
         audio = requests.post(
             f"https://api.elevenlabs.io/v1/text-to-speech/{elevenlabs_voice_id}",
@@ -124,9 +119,8 @@ def voice():
     hosted_url = request.url_root.rstrip("/") + "/audio"
     response.play(hosted_url)
 
-    # Lyssna igen
     gather = Gather(input="speech", language="sv-SE", speech_timeout="auto", action="/voice", method="POST")
-    gather.say("Vad mer vill du prata om?", language="sv-SE")
+    gather.say("Vad mer vill du veta?", language="sv-SE")
     response.append(gather)
 
     return Response(str(response), mimetype="application/xml")
