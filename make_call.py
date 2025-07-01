@@ -1,6 +1,7 @@
 import os
 from twilio.rest import Client
 
+# Hämta miljövariabler
 twilio_sid = os.getenv("TWILIO_ACCOUNT_SID")
 twilio_token = os.getenv("TWILIO_AUTH_TOKEN")
 from_number = os.getenv("TWILIO_PHONE_NUMBER")
@@ -8,7 +9,7 @@ to_number = os.getenv("MY_PHONE_NUMBER")
 
 client = Client(twilio_sid, twilio_token)
 
-# Twilio kommer säga intro och sedan posta till /voice
+# Skapa samtal
 call = client.calls.create(
     twiml=f'''
         <Response>
