@@ -30,18 +30,27 @@ def voice():
         response.append(gather)
         return Response(str(response), mimetype="application/xml")
 
+    # 🔹 Första samtalsrundan – invänta kundens röst innan AI svarar
     if not user_input:
         gather = Gather(input="speech", language="sv-SE", speech_timeout="auto", action="/voice", method="POST")
-        gather.say("Hej, vänta gärna kvar en stund...", language="sv-SE")
+        gather.say("Hej! Det här är Sanna från Handlr. Vänta gärna kvar en stund...", language="sv-SE")
         response.append(gather)
         return Response(str(response), mimetype="application/xml")
 
+    # 🔹 GPT-svar
     try:
-        # ❗️KORREKT FÖR SDK v0.28.1
         completion = openai.ChatCompletion.create(
             model="gpt-3.5-turbo",
             messages=[
-                {"role": "system", "content": "Du är en AI-assistent som heter Sanna från Handlr. För ett vänligt samtal med kunden."},
+                {
+                    "role": "system",
+                    "content": (
+                        "Du är en AI-assistent som heter Sanna och jobbar för Handlr. "
+                        "Du ringer villaägare för att höra om de funderar på att ta hjälp med projekt i hemmet. "
+                        "Svara alltid naturligt, trevligt och som om du var människa. Håll svaren korta men vänliga. "
+                        "Avsluta med att ställa en enkel fråga tillbaka så att konversationen fortsätter."
+                    )
+                },
                 {"role": "user", "content": user_input}
             ]
         )
@@ -52,6 +61,7 @@ def voice():
         traceback.print_exc()
         return fallback_and_listen("Jag kunde inte hämta något svar just nu.")
 
+    # 🔹 ElevenLabs text-to-speech
     try:
         audio = requests.post(
             f"https://api.elevenlabs.io/v1/text-to-speech/{elevenlabs_voice_id}",
@@ -76,12 +86,14 @@ def voice():
         traceback.print_exc()
         return fallback_and_listen("Jag kunde inte spela upp svaret.")
 
+    # 🔹 Spela upp ljudfilen
     hosted_url = request.url_root.rstrip("/") + "/audio"
     if os.path.exists("response.mp3"):
         response.play(hosted_url)
     else:
         return fallback_and_listen("Jag kunde inte hitta ljudfilen.")
 
+    # 🔹 Lyssna på nästa svar
     gather = Gather(input="speech", language="sv-SE", speech_timeout="auto", action="/voice", method="POST")
     gather.say("Vad mer vill du veta?", language="sv-SE")
     response.append(gather)
@@ -92,7 +104,13 @@ def voice():
 def audio():
     filepath = "response.mp3"
     if os.path.exists(filepath):
-        return send_file(filepath, mimetype="audio/mpeg")
+        with open(filepath, "rb") as f:
+            data = f.read()
+        return Response(data, mimetype="audio/mpeg", headers={
+            "Content-Disposition": "inline; filename=response.mp3",
+            "Cache-Control": "no-cache",
+            "Content-Length": str(len(data))
+        })
     return "Ingen ljudfil tillgänglig", 404
 
 if __name__ == "__main__":
