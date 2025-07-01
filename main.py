@@ -1,6 +1,7 @@
 import os
 import openai
 import requests
+import traceback
 from flask import Flask, request, Response, send_file
 from twilio.twiml.voice_response import VoiceResponse, Gather
 
@@ -29,26 +30,30 @@ def voice():
         response.append(gather)
         return Response(str(response), mimetype="application/xml")
 
+    # 🔹 Första samtal – låt kunden säga något först
     if not user_input:
         gather = Gather(input="speech", language="sv-SE", speech_timeout="auto", action="/voice", method="POST")
         gather.say("Hej, vänta gärna kvar en stund...", language="sv-SE")
         response.append(gather)
         return Response(str(response), mimetype="application/xml")
 
+    # 🔹 GPT-anrop med hårdkodad input för felsökning
     try:
         completion = openai.chat.completions.create(
             model="gpt-3.5-turbo",
             messages=[
-                {"role": "system", "content": "Du är en AI-assistent som heter Sanna från Handlr. För ett vänligt samtal med kunden."},
-                {"role": "user", "content": user_input}
+                {"role": "system", "content": "Du är en AI-assistent som heter Sanna från Handlr. Börja samtalet på ett naturligt och vänligt sätt."},
+                {"role": "user", "content": "Säg hej, detta är Sanna från Handlr."}
             ]
         )
         gpt_reply = completion.choices[0].message.content.strip()
         print("🤖 GPT svar:", gpt_reply)
     except Exception as e:
-        print("❌ GPT-fel:", str(e))
+        print("❌ GPT-fel:")
+        traceback.print_exc()
         return fallback_and_listen("Jag kunde inte hämta något svar just nu.")
 
+    # 🔹 ElevenLabs-anrop
     try:
         audio = requests.post(
             f"https://api.elevenlabs.io/v1/text-to-speech/{elevenlabs_voice_id}",
@@ -67,17 +72,20 @@ def voice():
                 f.write(audio.content)
         else:
             print("⚠️ ElevenLabs API-fel:", audio.status_code, audio.text)
-            return fallback_and_listen("Jag kunde inte generera något ljud just nu.")
+            return fallback_and_listen("Jag kunde inte generera ljudet.")
     except Exception as e:
-        print("❌ ElevenLabs-fel:", str(e))
-        return fallback_and_listen("Jag kunde inte spela upp svaret just nu.")
+        print("❌ ElevenLabs-fel:")
+        traceback.print_exc()
+        return fallback_and_listen("Jag kunde inte spela upp svaret.")
 
+    # 🔹 Spela upp ljudet
     hosted_url = request.url_root.rstrip("/") + "/audio"
     if os.path.exists("response.mp3"):
         response.play(hosted_url)
     else:
         return fallback_and_listen("Jag kunde inte hitta ljudfilen.")
 
+    # 🔹 Fortsätt konversationen
     gather = Gather(input="speech", language="sv-SE", speech_timeout="auto", action="/voice", method="POST")
     gather.say("Vad mer vill du veta?", language="sv-SE")
     response.append(gather)
