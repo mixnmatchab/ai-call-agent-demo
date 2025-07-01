@@ -22,65 +22,19 @@ def voice():
 
     response = VoiceResponse()
 
-    # 🔹 Första anropet – börja samtalet
+    # 🔹 Första anropet – invänta kundens hälsning
     if not user_input:
-        system_prompt = "Du är en AI-assistent som heter Sanna och jobbar för Handlr. Börja samtalet naturligt på svenska med att presentera dig och fråga om kunden funderar på något projekt i sitt hus."
-        user_prompt = "Starta samtalet"
-
-        try:
-            completion = openai.chat.completions.create(
-                model="gpt-3.5-turbo",
-                messages=[
-                    {"role": "system", "content": system_prompt},
-                    {"role": "user", "content": user_prompt}
-                ]
-            )
-            gpt_reply = completion.choices[0].message.content.strip()
-            print("🟢 GPT startfras:", gpt_reply)
-        except Exception as e:
-            print("❌ GPT-fel vid start:", str(e))
-            response.say("Tyvärr kunde vi inte starta samtalet. Försök igen senare.", language="sv-SE")
-            return Response(str(response), mimetype="application/xml")
-
-        try:
-            audio = requests.post(
-                f"https://api.elevenlabs.io/v1/text-to-speech/{elevenlabs_voice_id}",
-                headers={
-                    "xi-api-key": elevenlabs_api_key,
-                    "Content-Type": "application/json"
-                },
-                json={
-                    "text": gpt_reply,
-                    "model_id": "eleven_monolingual_v1",
-                    "voice_settings": {"stability": 0.5, "similarity_boost": 0.75}
-                }
-            )
-            if audio.status_code == 200:
-                with open("response.mp3", "wb") as f:
-                    f.write(audio.content)
-            else:
-                print("⚠️ ElevenLabs API-fel:", audio.status_code, audio.text)
-                response.say("Fel med röstgenerering.", language="sv-SE")
-                return Response(str(response), mimetype="application/xml")
-        except Exception as e:
-            print("❌ ElevenLabs-fel vid start:", str(e))
-            response.say("Kunde inte spela upp svaret. Försök igen.", language="sv-SE")
-            return Response(str(response), mimetype="application/xml")
-
-        hosted_url = request.url_root.rstrip("/") + "/audio"
-        response.play(hosted_url)
-
         gather = Gather(input="speech", language="sv-SE", speech_timeout="auto", action="/voice", method="POST")
-        gather.say("Varsågod, du kan svara nu.", language="sv-SE")
+        gather.say("Hej, vänta gärna kvar en stund...", language="sv-SE")
         response.append(gather)
         return Response(str(response), mimetype="application/xml")
 
-    # 🔹 Fortsätt konversationen
+    # 🔹 Nu har kunden sagt något – AI svarar
     try:
         completion = openai.chat.completions.create(
             model="gpt-3.5-turbo",
             messages=[
-                {"role": "system", "content": "Fortsätt samtalet naturligt som en AI-assistent från Handlr. Svara på vad kunden säger och ställ en ny fråga."},
+                {"role": "system", "content": "Du är en AI-assistent som heter Sanna och jobbar för Handlr. Det här är inledningen på ett naturligt samtal. Presentera dig som Sanna och ställ en första vänlig fråga."},
                 {"role": "user", "content": user_input}
             ]
         )
@@ -109,18 +63,18 @@ def voice():
                 f.write(audio.content)
         else:
             print("⚠️ ElevenLabs API-fel:", audio.status_code, audio.text)
-            response.say("Fel med röstgenerering.", language="sv-SE")
+            response.say("Röstgenerering misslyckades.", language="sv-SE")
             return Response(str(response), mimetype="application/xml")
     except Exception as e:
         print("❌ ElevenLabs-fel:", str(e))
-        response.say("Kunde inte spela upp svaret. Försök igen.", language="sv-SE")
+        response.say("Kunde inte spela upp svaret.", language="sv-SE")
         return Response(str(response), mimetype="application/xml")
 
     hosted_url = request.url_root.rstrip("/") + "/audio"
     response.play(hosted_url)
 
     gather = Gather(input="speech", language="sv-SE", speech_timeout="auto", action="/voice", method="POST")
-    gather.say("Vad mer vill du veta?", language="sv-SE")
+    gather.say("Varsågod, vad vill du prata om?", language="sv-SE")
     response.append(gather)
 
     return Response(str(response), mimetype="application/xml")
